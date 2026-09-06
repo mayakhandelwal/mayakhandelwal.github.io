@@ -477,7 +477,7 @@ footer a{color:var(--amber)}
         <!-- honeypot: hidden from people, checked server-side by Formspree -->
         <input class="gotcha" type="text" name="_gotcha" tabindex="-1" autocomplete="off" aria-hidden="true">
 
-        <div id="captcha" class="cf-turnstile" data-sitekey="0x4AAAAAAEp2_kYqrleOAnkB" data-theme="dark" data-callback="captchaPassed"></div>
+        <div id="captcha" class="cf-turnstile" data-sitekey="0x4AAAAAAEp2_kYqrleOAnkB" data-theme="dark" data-callback="captchaPassed" data-error-callback="captchaError" data-retry="never"></div>
 
         <button id="send" type="submit">Send message</button>
         <p class="form-note" id="form-note">Protected by a spam check. Your message reaches me directly; my address is not published on this page.</p>
@@ -503,6 +503,7 @@ document.getElementById('yr').textContent = new Date().getFullYear();
   var send = document.getElementById('send');
   var note = document.getElementById('form-note');
   var key  = box.getAttribute('data-sitekey');
+  var DEFAULT = note.textContent;
 
   // No key pasted in yet: hide the widget and leave the form working.
   if (!key || key.indexOf('YOUR_') === 0) {
@@ -513,14 +514,34 @@ document.getElementById('yr').textContent = new Date().getFullYear();
 
   // Key present: hold the button until the challenge is solved.
   send.disabled = true;
-  window.captchaPassed = function () { send.disabled = false; };
 
-  // If Turnstile is blocked or fails to load, re-enable rather than trapping
-  // someone who is genuinely trying to get in touch.
+  window.captchaPassed = function () {
+    send.disabled = false;
+    note.textContent = DEFAULT;
+  };
+
+  // Turnstile refuses for specific, fixable reasons. Say which one out loud
+  // rather than leaving a blank space where the widget should be.
+  window.captchaError = function (code) {
+    var why = {
+      '110200': 'this domain is not in the widget\u2019s hostname list in Cloudflare',
+      '110100': 'the site key is not recognised',
+      '110110': 'the site key is not recognised',
+      '110600': 'the site key is for a different widget type',
+      '400020': 'the site key is malformed'
+    }[String(code)] || 'Turnstile returned an error';
+    send.disabled = false;
+    note.textContent = 'Spam check off \u2014 ' + code + ': ' + why + '. The form still sends.';
+  };
+
+  // If the widget never appears at all, distinguish "script blocked" from
+  // "script loaded but widget refused", and never trap a real sender.
   setTimeout(function () {
     if (send.disabled && !box.querySelector('iframe')) {
       send.disabled = false;
-      note.textContent = 'Spam check unavailable, but the form still works.';
+      note.textContent = window.turnstile
+        ? 'Spam check did not render. The form still sends.'
+        : 'Spam check script did not load, likely blocked by a browser extension or network. The form still sends.';
     }
   }, 8000);
 })();
